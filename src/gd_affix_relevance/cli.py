@@ -8,6 +8,11 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from gd_affix_relevance.automation import (
+    build_profile_context,
+    profile_json_schema,
+    validate_profile_semantics,
+)
 from gd_affix_relevance.catalog import CatalogBundle
 from gd_affix_relevance.catalog.compiler import compile_catalog_bundle
 from gd_affix_relevance.domain import LocalizationEntry, locale_for_code
@@ -305,6 +310,52 @@ def _run_assemble_release(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_profile_context(args: argparse.Namespace) -> int:
+    bundle = CatalogBundle.load(args.catalog_root)
+    try:
+        payload = build_profile_context(
+            bundle,
+            mastery_ids=tuple(args.mastery or ()),
+        )
+    except ValueError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    report = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    _write_report(report, args.output)
+    return 0
+
+
+def _run_profile_schema(args: argparse.Namespace) -> int:
+    report = json.dumps(profile_json_schema(), ensure_ascii=False, indent=2) + "\n"
+    _write_report(report, args.output)
+    return 0
+
+
+def _run_validate_profile(args: argparse.Namespace) -> int:
+    try:
+        profile = load_profile(args.profile_file)
+        bundle = CatalogBundle.load(args.catalog_root)
+    except (OSError, ValueError) as error:
+        _print_json_summary(
+            {
+                "valid": False,
+                "errors": [
+                    {
+                        "severity": "error",
+                        "path": "$",
+                        "message": str(error),
+                        "suggestions": [],
+                    }
+                ],
+                "warnings": [],
+            }
+        )
+        return 2
+    result = validate_profile_semantics(profile, bundle)
+    _print_json_summary(result.as_dict())
+    return 0 if result.valid else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grim-gleaner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -461,6 +512,34 @@ def build_parser() -> argparse.ArgumentParser:
     release.add_argument("--data-root", type=Path)
     release.add_argument("--profiles-root", type=Path)
     release.set_defaults(handler=_run_assemble_release)
+
+    context = subparsers.add_parser(
+        "profile-context",
+        help="export a provider-neutral profile contract for agents and integrations",
+    )
+    context.add_argument("--catalog-root", type=Path, required=True)
+    context.add_argument(
+        "--mastery",
+        action="append",
+        help="include the skill tree for this mastery ID; repeat for a dual class",
+    )
+    context.add_argument("--output", type=Path)
+    context.set_defaults(handler=_run_profile_context)
+
+    schema = subparsers.add_parser(
+        "profile-schema",
+        help="export the vendor-neutral JSON Schema for build profiles",
+    )
+    schema.add_argument("--output", type=Path)
+    schema.set_defaults(handler=_run_profile_schema)
+
+    validate = subparsers.add_parser(
+        "validate-profile",
+        help="validate profile shape, IDs, and mastery/skill relationships",
+    )
+    validate.add_argument("--catalog-root", type=Path, required=True)
+    validate.add_argument("--profile-file", type=Path, required=True)
+    validate.set_defaults(handler=_run_validate_profile)
     return parser
 
 

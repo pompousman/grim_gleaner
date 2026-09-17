@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/pompousman/grim_gleaner/main/schemas/profile.schema.json",
+  "title": "Grim Gleaner build profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "level_band",
+    "masteries",
+    "skill_weights",
+    "weights",
+    "resistance_cap_enabled",
+    "resistance_cap_weights",
+    "excluded_conversion_sources"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 5
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "level_band": {
+      "type": "string",
+      "enum": [
+        "1-49",
+        "50-64",
+        "65-79",
+        "80-89",
+        "90+"
+      ]
+    },
+    "masteries": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "skill_weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "resistance_cap_enabled": {
+      "type": "boolean"
+    },
+    "resistance_cap_weights": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4
+      }
+    },
+    "excluded_conversion_sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "uniqueItems": true
+      }
+    }
+  }
+}
