@@ -188,6 +188,19 @@ def test_profile_level_selector_updates_profile_and_dirty_state() -> None:
     assert profile_changes == ["80-89"]
 
 
+def test_replacing_profile_requires_resolution_of_unsaved_changes() -> None:
+    _application()
+    editor = ProfileEditor(BuildProfile())
+    editor.name_edit.setText("Dirty")
+    editor._prompt_unsaved = lambda message: QMessageBox.StandardButton.Cancel
+
+    assert not editor._resolve_unsaved_before_replace()
+    assert editor.profile.name == "Dirty"
+
+    editor._prompt_unsaved = lambda message: QMessageBox.StandardButton.Discard
+    assert editor._resolve_unsaved_before_replace()
+
+
 def test_confirm_close_allows_clean_or_discarded_profile() -> None:
     _application()
     editor = ProfileEditor(BuildProfile())

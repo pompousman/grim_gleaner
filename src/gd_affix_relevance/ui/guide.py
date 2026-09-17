@@ -64,6 +64,12 @@ class GuidePage(QWidget):
         )
         _add_section(
             content_layout,
+            t("guide.integrations_title"),
+            t("guide.integrations_body"),
+            content,
+        )
+        _add_section(
+            content_layout,
             t("guide.limitations_title"),
             t("guide.limitations_body"),
             content,

@@ -73,6 +73,27 @@ def test_profile_file_rejects_invalid_data(
         load_profile(source)
 
 
+def test_current_profile_schema_rejects_missing_and_unknown_fields(
+    tmp_path: Path,
+) -> None:
+    complete = {
+        "schema_version": PROFILE_FILE_SCHEMA_VERSION,
+        **BuildProfile("Strict profile").to_dict(),
+    }
+    missing = dict(complete)
+    missing.pop("masteries")
+    unknown = {**complete, "assistant_explanation": "not profile data"}
+
+    for name, payload, message in (
+        ("missing.json", missing, "Missing required"),
+        ("unknown.json", unknown, "Unknown profile field"),
+    ):
+        source = tmp_path / name
+        source.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ProfileFormatError, match=message):
+            load_profile(source)
+
+
 def test_profile_file_reports_malformed_json(tmp_path: Path) -> None:
     source = tmp_path / "broken.json"
     source.write_text("{ definitely not json", encoding="utf-8")

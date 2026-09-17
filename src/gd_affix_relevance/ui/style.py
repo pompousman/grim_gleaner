@@ -378,6 +378,26 @@ QToolButton#weightStar {
 }
 QToolButton#weightStar[filled="true"] { color: #e0b44c; }
 QToolButton#weightStar:hover { color: #f1ca6d; }
+QFrame#automationCard {
+    background: #1b1e24;
+    border: 1px solid #303640;
+    border-radius: 7px;
+}
+QLabel#automationPrivacy {
+    background: #192823;
+    border: 1px solid #2f5749;
+    border-radius: 5px;
+    color: #a9d9c4;
+    padding: 8px 10px;
+}
+QPlainTextEdit#automationDiagnostics {
+    background: #15181d;
+    border: 1px solid #303640;
+    border-radius: 5px;
+    color: #cbd1db;
+    font-family: Consolas, "Courier New", monospace;
+    padding: 6px;
+}
 QScrollArea { background: transparent; border: 0; }
 QScrollBar:vertical { background: #17191d; width: 11px; }
 QScrollBar::handle:vertical { background: #3a404b; border-radius: 5px; min-height: 30px; }

@@ -11,7 +11,7 @@ from dataclasses import asdict, dataclass
 from difflib import get_close_matches
 from typing import Any
 
-from gd_affix_relevance.catalog import CatalogBundle
+from gd_affix_relevance.catalog import CatalogBundle, SkillCatalog
 from gd_affix_relevance.domain import BuildProfile
 from gd_affix_relevance.level_bands import LEVEL_BANDS
 from gd_affix_relevance.profile_store import PROFILE_FILE_SCHEMA_VERSION
@@ -70,7 +70,6 @@ def build_profile_context(
             and skill.display_name
             and skill.skill_tier > 0
             and skill.tree_order > 0
-            and skill.max_level > 1
         )
     )
     for skill in selectable_skills:
@@ -246,12 +245,19 @@ def profile_json_schema() -> dict[str, Any]:
 
 def validate_profile_semantics(
     profile: BuildProfile,
-    catalog: CatalogBundle,
+    catalog: CatalogBundle | SkillCatalog,
 ) -> ProfileValidationResult:
     """Check IDs and cross-field relationships that JSON shape validation cannot."""
 
     errors: list[ProfileDiagnostic] = []
     warnings: list[ProfileDiagnostic] = []
+    skills = catalog.skills if isinstance(catalog, CatalogBundle) else catalog
+    if isinstance(skills, SkillCatalog):
+        skill_definitions = skills.skills
+    else:
+        # ``CatalogBundle.skills`` is a SkillCatalog; this is defensive for
+        # lightweight compatible catalog objects used by integrations.
+        skill_definitions = tuple(skills)
     known_stats = {
         definition.stat_id
         for definition in registered_stat_definitions()
@@ -259,19 +265,18 @@ def validate_profile_semantics(
     }
     known_skills = {
         skill.skill_id: skill
-        for skill in catalog.skills.skills
+        for skill in skill_definitions
         if (
             not skill.is_mastery
             and skill.mastery_id
             and skill.display_name
             and skill.skill_tier > 0
             and skill.tree_order > 0
-            and skill.max_level > 1
         )
     }
     known_masteries = {
         skill.mastery_id
-        for skill in catalog.skills.skills
+        for skill in skill_definitions
         if skill.is_mastery and skill.mastery_id
     }
 

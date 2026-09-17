@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from gd_affix_relevance.automation import validate_profile_semantics
 from gd_affix_relevance.catalog import (
     AffixCatalog,
     CatalogBundle,
@@ -153,23 +154,36 @@ class MainWindow(QMainWindow):
 
         catalog_status = ""
         catalog_for_export = catalog
+        loaded_bundle: CatalogBundle | None = None
         if catalog is None and skills is None and items is None:
-            bundle, catalog_status = _load_runtime_catalog(self.runtime_paths)
-            if bundle is not None:
-                catalog = bundle.affixes
-                skills = bundle.skills
-                items = bundle.items
+            loaded_bundle, catalog_status = _load_runtime_catalog(
+                self.runtime_paths
+            )
+            if loaded_bundle is not None:
+                catalog = loaded_bundle.affixes
+                skills = loaded_bundle.skills
+                items = loaded_bundle.items
                 catalog_for_export = catalog
             elif self.runtime_paths.mode == "release":
                 self.catalog_load_error = catalog_status
         catalog = catalog or AffixCatalog(())
         skills = skills or SkillCatalog(())
         items = items or ItemCatalog((), (), (), (), (), ())
+        if profile_path is not None and profile is not None and skills.skills:
+            validation = validate_profile_semantics(profile, skills)
+            if not validation.valid:
+                profile = BuildProfile()
+                profile_path = None
+                startup_notice = t("main_window.profile_invalid_notice")
+                if self.settings is not None:
+                    self.settings.remove("profiles/active_path")
+                    self.settings.sync()
 
         self.profile_editor = ProfileEditor(
             profile,
             self.pages,
             skills=skills,
+            catalog_bundle=loaded_bundle,
             profile_path=profile_path,
             profiles_root=self.runtime_paths.profiles_root,
             startup_notice=startup_notice,

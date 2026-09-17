@@ -43,6 +43,11 @@ def test_profile_context_is_provider_neutral_and_focuses_skill_payload(
     assert set(selected) == {"playerclass05", "playerclass08"}
     assert all(selected[mastery_id]["skills"] for mastery_id in selected)
     assert any(
+        skill["max_level"] == 1
+        for mastery in selected.values()
+        for skill in mastery["skills"]
+    )
+    assert any(
         stat["id"] == "aether_damage_percent"
         for tab in context["stat_tabs"]
         for package in tab["packages"]

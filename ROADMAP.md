@@ -11,16 +11,21 @@ backend.
   and semantic validation are available from the CLI.
 - **Model-neutral onboarding:** the same workflow works with hosted assistants,
   local models, IDE agents, scripts, and hand-authored JSON.
+- **Desktop integration center:** the Build Profile screen can save or copy a
+  focused context, export the schema, validate candidate files, preview
+  diagnostics, and import confirmed output as an unsaved draft.
+- **Safe profile replacement:** manual and generated imports protect unsaved
+  work; persisted profiles are checked for real stat/skill IDs and valid mastery
+  relationships. One-rank transmuter skills are now selectable and valid.
 - **Contributor runway:** documented setup/architecture and Linux + Windows CI.
 - **Privacy boundary:** no API key handling and no proprietary DBR upload path.
 
 ## Next: make integrations delightful
 
-1. **Profile import wizard**
-   - Paste JSON, preview every proposed weight, show unknown-ID suggestions, and
-     require confirmation before replacing the active profile.
+1. **Profile provenance and richer previews**
    - Add provenance metadata outside the scoring payload: source URL, generator,
-     catalog version, and user edits.
+     catalog version, user edits, and a semantic before/after diff.
+   - Offer paste-from-clipboard alongside the file-based validation workflow.
 2. **GrimTools bridge**
    - Import a build URL or exported build document.
    - Infer masteries, active skills, damage channels, conversions, attack style,

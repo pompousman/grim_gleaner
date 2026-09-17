@@ -1,6 +1,12 @@
 # Grim Gleaner v.0.9.2-beta
 
 Recent Changes:
+Unreleased:
+- added a provider-neutral Integrations tab for context/schema export and safe profile validation/import
+- added semantic profile checks with typo suggestions and unsaved-change protection
+- restored one-rank transmuter skills to the profile skill selector
+- added contributor guidance and Windows/Linux continuous integration
+
 v0.9.2-beta (08/19/26):
 - updated catalog for Grim Dawn 1.3.0.7
 - added English and Russian interface and item-name export support
@@ -48,8 +54,10 @@ grim-gleaner validate-profile --catalog-root artifacts/catalog \
 ```
 
 The context contains valid stat/skill IDs, weighting guidance, and a JSON
-Schema. No API keys are stored by Grim Gleaner, and generated files pass the
-same loader and semantic validation regardless of their source. See
+Schema. The **Build Profile → Integrations** tab can save or copy that context,
+validate a candidate, and import it as an unsaved draft. No API keys are stored
+by Grim Gleaner, and generated files pass the same loader and semantic
+validation regardless of their source. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for human and agent
 contribution workflows. The larger direction—including a GrimTools bridge,
 local MCP/OpenAPI service, whole-loadout optimization, and community profile
