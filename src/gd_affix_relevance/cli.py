@@ -46,6 +46,14 @@ from gd_affix_relevance.normalization.affix_reachability import (
 from gd_affix_relevance.profile_provenance import verify_profile_provenance
 from gd_affix_relevance.profile_store import load_profile
 from gd_affix_relevance.output import generate_rainbow_output
+from gd_affix_relevance.ranking_export import (
+    ALL_RANKING_SLOT_IDS,
+    DEFAULT_LIMIT_PER_SLOT,
+    DEFAULT_MINIMUM_GRADE,
+    MAX_LIMIT_PER_SLOT,
+    RANKING_KINDS,
+    build_profile_ranking,
+)
 from gd_affix_relevance.release_assembly import assemble_release
 from gd_affix_relevance.runtime_paths import resolve_runtime_paths
 from gd_affix_relevance.scoring import (
@@ -400,6 +408,30 @@ def _run_validate_profile(args: argparse.Namespace) -> int:
     return 0 if result.valid else 2
 
 
+def _run_rank_profile(args: argparse.Namespace) -> int:
+    try:
+        profile = load_profile(args.profile_file)
+        bundle = CatalogBundle.load(args.catalog_root)
+        result = validate_profile_semantics(profile, bundle)
+        if not result.valid:
+            _print_json_summary(result.as_dict())
+            return 2
+        payload = build_profile_ranking(
+            bundle,
+            profile,
+            kinds=tuple(args.kind or ()),
+            slot_ids=tuple(args.slot or ()),
+            limit_per_slot=args.limit_per_slot,
+            minimum_grade=args.minimum_grade,
+        )
+    except (OSError, TypeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    report = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    _write_report(report, args.output)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grim-gleaner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -584,6 +616,47 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--catalog-root", type=Path, required=True)
     validate.add_argument("--profile-file", type=Path, required=True)
     validate.set_defaults(handler=_run_validate_profile)
+
+    rank = subparsers.add_parser(
+        "rank-profile",
+        help="export an explainable gear ranking for a validated profile",
+    )
+    rank.add_argument("--catalog-root", type=Path, required=True)
+    rank.add_argument("--profile-file", type=Path, required=True)
+    rank.add_argument(
+        "--kind",
+        action="append",
+        choices=RANKING_KINDS,
+        help=(
+            "limit results to this kind; repeat for several "
+            "(default: affixes, uniques, components, and augments)"
+        ),
+    )
+    rank.add_argument(
+        "--slot",
+        action="append",
+        metavar="SLOT",
+        help=(
+            "limit results to this slot ID; repeat for several "
+            f"(default: all of {', '.join(ALL_RANKING_SLOT_IDS)})"
+        ),
+    )
+    rank.add_argument(
+        "--limit-per-slot",
+        type=_positive_int,
+        default=DEFAULT_LIMIT_PER_SLOT,
+        help=(
+            "maximum matches per slot and kind "
+            f"(default: {DEFAULT_LIMIT_PER_SLOT}, max: {MAX_LIMIT_PER_SLOT})"
+        ),
+    )
+    rank.add_argument(
+        "--minimum-grade",
+        default=DEFAULT_MINIMUM_GRADE,
+        help="minimum grade for unique items (default: B)",
+    )
+    rank.add_argument("--output", type=Path)
+    rank.set_defaults(handler=_run_rank_profile)
 
     diff = subparsers.add_parser(
         "diff-profiles",

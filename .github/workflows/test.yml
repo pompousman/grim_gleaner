@@ -46,3 +46,16 @@ jobs:
             --mastery playerclass05 \
             --mastery playerclass08 \
             --output generated-context.json >/dev/null
+          grim-gleaner rank-profile \
+            --catalog-root artifacts/catalog \
+            --profile-file artifacts/profiles/examples/Lightning_Vindicator.json \
+            --kind affix --slot ring --limit-per-slot 2 \
+            --output generated-ranking.json >/dev/null
+          python - <<'EOF'
+          import json
+          payload = json.load(open("generated-ranking.json", encoding="utf-8"))
+          assert payload["protocol"] == "grim-gleaner-profile-ranking"
+          ring = payload["slots"]["ring"]
+          assert ring["prefixes"] and ring["suffixes"]
+          assert ring["prefixes"][0]["matched_stats"]
+          EOF

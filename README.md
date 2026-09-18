@@ -2,6 +2,7 @@
 
 Recent Changes:
 Unreleased:
+- added explainable gear rankings to the automation API: `rank-profile` CLI command and `POST /v1/ranking` return per-slot affix/unique/component/augment matches with matched stat weights, unmatched stats, and grade thresholds
 - added a provider-neutral Integrations tab for context/schema export and safe profile validation/import
 - added semantic profile checks with typo suggestions and unsaved-change protection
 - added clipboard import, before/after profile diffs, and hash-bound provenance sidecars
@@ -52,6 +53,8 @@ grim-gleaner profile-context --catalog-root artifacts/catalog \
   --mastery playerclass05 --mastery playerclass08 --output context.json
 grim-gleaner validate-profile --catalog-root artifacts/catalog \
   --profile-file generated-profile.json
+grim-gleaner rank-profile --catalog-root artifacts/catalog \
+  --profile-file generated-profile.json --kind affix --slot ring
 # Optional localhost API with /openapi.json discovery:
 grim-gleaner serve-automation --catalog-root artifacts/catalog
 ```
@@ -62,7 +65,11 @@ validate a file or clipboard candidate, preview a semantic before/after diff,
 and import it as an unsaved draft. Optional provenance is stored in a separate
 hash-bound sidecar when the draft is saved. No API keys are stored by Grim
 Gleaner, and generated files pass the same loader and semantic
-validation regardless of their source. See
+validation regardless of their source. `rank-profile` (or `POST /v1/ranking`
+on the automation server) returns the same explainable per-slot ranking as the
+Gear Grades screen—matched stat weights, unmatched stats, and grade
+thresholds—so an assistant can justify its suggestions with the same
+deterministic engine. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for human and agent
 contribution workflows. The larger direction—including a GrimTools bridge,
 local MCP/OpenAPI service, whole-loadout optimization, and community profile

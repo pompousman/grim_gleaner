@@ -54,6 +54,8 @@ grim-gleaner profile-context --catalog-root artifacts/catalog \
   --mastery playerclass05 --mastery playerclass08 --output context.json
 grim-gleaner validate-profile --catalog-root artifacts/catalog \
   --profile-file candidate.json
+grim-gleaner rank-profile --catalog-root artifacts/catalog \
+  --profile-file candidate.json --kind affix --slot ring
 grim-gleaner diff-profiles --before current.json --after candidate.json
 grim-gleaner verify-profile-provenance --profile-file accepted.json
 grim-gleaner serve-automation --catalog-root artifacts/catalog
@@ -65,3 +67,9 @@ and rejects non-loopback binds until an authenticated mode exists.
 `profile-context` is plain JSON and is the canonical discovery surface for any
 model, script, editor extension, or web client. Integrations should not require
 users to submit game data or API keys to Grim Gleaner.
+
+`rank-profile` (and `POST /v1/ranking` on the local server) returns the same
+explainable ranking the Gear Grades screen shows: top affixes, uniques,
+components, and augments per slot, with matched stat weights, unmatched stat
+IDs, coverage, and grade thresholds. Profiles must pass normal loading plus
+semantic validation before they are ranked.

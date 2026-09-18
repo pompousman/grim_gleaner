@@ -181,10 +181,17 @@ def test_mastery_skills_sort_by_tier_with_children_after_their_parent() -> None:
     editor = SkillsEditor(
         BuildProfile(masteries=("playerclass01", "")), catalog
     )
+    # One-rank transmuter skills such as Tremor stay selectable in the editor.
     assert [
         editor.panels[0].available_list.item(index).text()
         for index in range(editor.panels[0].available_list.count())
-    ] == ["Cadence", "└ Fighting Form", "Forcewave", "Military Conditioning"]
+    ] == [
+        "Cadence",
+        "└ Fighting Form",
+        "Forcewave",
+        "Military Conditioning",
+        "Tremor",
+    ]
 
 
 def test_skills_editor_adds_weights_and_excludes_duplicate_mastery() -> None:
