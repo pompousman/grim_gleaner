@@ -8,6 +8,7 @@ from gd_affix_relevance.profile_store import (
     PROFILE_FILE_SCHEMA_VERSION,
     ProfileFormatError,
     load_profile,
+    load_profile_text,
     save_profile,
 )
 
@@ -71,6 +72,39 @@ def test_profile_file_rejects_invalid_data(
 
     with pytest.raises(ProfileFormatError, match=message):
         load_profile(source)
+
+
+def test_current_profile_schema_rejects_missing_and_unknown_fields(
+    tmp_path: Path,
+) -> None:
+    complete = {
+        "schema_version": PROFILE_FILE_SCHEMA_VERSION,
+        **BuildProfile("Strict profile").to_dict(),
+    }
+    missing = dict(complete)
+    missing.pop("masteries")
+    unknown = {**complete, "assistant_explanation": "not profile data"}
+
+    for name, payload, message in (
+        ("missing.json", missing, "Missing required"),
+        ("unknown.json", unknown, "Unknown profile field"),
+    ):
+        source = tmp_path / name
+        source.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(ProfileFormatError, match=message):
+            load_profile(source)
+
+
+def test_profile_text_supports_clipboard_import() -> None:
+    payload = {
+        "schema_version": PROFILE_FILE_SCHEMA_VERSION,
+        **BuildProfile("Clipboard", {"health": 3}).to_dict(),
+    }
+
+    profile = load_profile_text(json.dumps(payload))
+
+    assert profile.name == "Clipboard"
+    assert profile.weight_for("health") == 3
 
 
 def test_profile_file_reports_malformed_json(tmp_path: Path) -> None:

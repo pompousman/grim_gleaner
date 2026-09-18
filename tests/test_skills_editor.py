@@ -174,6 +174,7 @@ def test_mastery_skills_sort_by_tier_with_children_after_their_parent() -> None:
         "Fighting Form",
         "Forcewave",
         "Military Conditioning",
+        "Tremor",
     ]
 
     _application()

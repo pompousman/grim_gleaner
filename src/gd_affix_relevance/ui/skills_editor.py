@@ -54,7 +54,6 @@ def build_mastery_skills(catalog: SkillCatalog) -> tuple[MasterySkills, ...]:
             or not skill.display_name
             or skill.skill_tier <= 0
             or skill.tree_order <= 0
-            or skill.max_level <= 1
         ):
             continue
         grouped.setdefault(skill.mastery_id, []).append(skill)

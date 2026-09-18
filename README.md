@@ -1,6 +1,13 @@
 # Grim Gleaner v.0.9.2-beta
 
 Recent Changes:
+Unreleased:
+- added a provider-neutral Integrations tab for context/schema export and safe profile validation/import
+- added semantic profile checks with typo suggestions and unsaved-change protection
+- added clipboard import, before/after profile diffs, and hash-bound provenance sidecars
+- restored one-rank transmuter skills to the profile skill selector
+- added contributor guidance and Windows/Linux continuous integration
+
 v0.9.2-beta (08/19/26):
 - updated catalog for Grim Dawn 1.3.0.7
 - added English and Russian interface and item-name export support
@@ -29,8 +36,40 @@ and MI items directly to the item's tooltip
 
 **NOTE:** Grading only assesses *relevance* of stats of an item, not their values. A high grade means "this item's synergizes well with your build" but it may still be a poorly rolled item, or include stats you have already capped, etc. (Sadly, Grim Dawn doesn't expose live values of gear modifiers by default, and digging them up is a much more difficult and invasive process).
 
-### Disclaimer
-AI (Codex) was used for data analysis data and coding to build this program.
+## Open ecosystem and AI-assisted profiles
+
+Grim Gleaner's scoring is deterministic, local, and does not require an AI
+account. Its profile format is also deliberately provider-neutral: Claude,
+Codex, Gemini, Copilot, local Ollama models, ordinary scripts, and future tools
+can all target the same versioned JSON contract.
+
+For integrations or AI-assisted profile creation, export a compact discovery
+context, then request only the two relevant mastery trees:
+
+```bash
+grim-gleaner profile-context --catalog-root artifacts/catalog
+grim-gleaner profile-context --catalog-root artifacts/catalog \
+  --mastery playerclass05 --mastery playerclass08 --output context.json
+grim-gleaner validate-profile --catalog-root artifacts/catalog \
+  --profile-file generated-profile.json
+# Optional localhost API with /openapi.json discovery:
+grim-gleaner serve-automation --catalog-root artifacts/catalog
+```
+
+The context contains valid stat/skill IDs, weighting guidance, and a JSON
+Schema. The **Build Profile → Integrations** tab can save or copy that context,
+validate a file or clipboard candidate, preview a semantic before/after diff,
+and import it as an unsaved draft. Optional provenance is stored in a separate
+hash-bound sidecar when the draft is saved. No API keys are stored by Grim
+Gleaner, and generated files pass the same loader and semantic
+validation regardless of their source. See
+[CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for human and agent
+contribution workflows. The larger direction—including a GrimTools bridge,
+local MCP/OpenAPI service, whole-loadout optimization, and community profile
+packs—is laid out in [ROADMAP.md](ROADMAP.md).
+
+AI-assisted development has been used on this project. All contributions are
+reviewed on their behavior and tests rather than on a particular AI vendor.
 
 ## Installation and Setup
 
@@ -99,13 +138,21 @@ Rainbow Filter устанавливать необязательно. Если �
 
 ## Installing from Source
 
-I don't recommend doing this right now as I need to clean up some things. You can try:
+Use Python 3.13 or 3.14. The editable install keeps the checked-in catalogs and
+resources available while developing:
 
-1. Clone the repo
-2. python -m pip install -e .
-3. run grim-gleaner-ui.exe
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e ".[test]"
+grim-gleaner-ui
+```
 
-but no guarantees it'll work properly this way. It *definitely* won't work properly if you don't use the -e flag.
+Run the test suite with `python -m pytest -q`. A local Grim Dawn installation is
+needed for game-language extraction and end-to-end export, but not for most UI,
+scoring, profile, or integration work.
 
 The clean-install export localization files are tracked under `game_data/*/text_en`
 and are used directly by development runs. The compiled runtime catalog is

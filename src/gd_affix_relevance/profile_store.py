@@ -11,6 +11,20 @@ from gd_affix_relevance.io_utils import atomic_write_text
 
 PROFILE_FILE_SCHEMA_VERSION = 5
 SUPPORTED_PROFILE_FILE_SCHEMA_VERSIONS = frozenset({1, 2, 3, 4, 5})
+PROFILE_FILE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "name",
+        "level_band",
+        "masteries",
+        "skill_weights",
+        "weights",
+        "resistance_cap_enabled",
+        "resistance_cap_weights",
+        "excluded_conversion_sources",
+    }
+)
+CURRENT_PROFILE_REQUIRED_FIELDS = PROFILE_FILE_FIELDS
 
 
 class ProfileFormatError(ValueError):
@@ -38,9 +52,25 @@ def load_profile(path: Path) -> BuildProfile:
 
     source = Path(path)
     try:
-        payload: Any = json.loads(source.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        text = source.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as error:
         raise ProfileFormatError(f"Could not read profile: {error}") from error
+    return load_profile_text(text)
+
+
+def load_profile_text(text: str) -> BuildProfile:
+    """Validate profile JSON supplied by a clipboard or integration."""
+
+    try:
+        payload: Any = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ProfileFormatError(f"Could not read profile: {error}") from error
+    return load_profile_payload(payload)
+
+
+def load_profile_payload(payload: object) -> BuildProfile:
+    """Validate an already-decoded profile object."""
+
     if not isinstance(payload, dict):
         raise ProfileFormatError("Profile file must contain a JSON object")
 
@@ -53,10 +83,20 @@ def load_profile(path: Path) -> BuildProfile:
         raise ProfileFormatError(
             f"Unsupported profile schema version: {schema_version!r}"
         )
+    unknown_fields = set(payload) - PROFILE_FILE_FIELDS
+    if unknown_fields:
+        names = ", ".join(sorted(str(field) for field in unknown_fields))
+        raise ProfileFormatError(f"Unknown profile field(s): {names}")
     try:
-        return BuildProfile.from_dict(payload)
+        profile = BuildProfile.from_dict(payload)
     except (TypeError, ValueError) as error:
         raise ProfileFormatError(f"Invalid profile data: {error}") from error
+    if schema_version == PROFILE_FILE_SCHEMA_VERSION:
+        missing_fields = CURRENT_PROFILE_REQUIRED_FIELDS - set(payload)
+        if missing_fields:
+            names = ", ".join(sorted(missing_fields))
+            raise ProfileFormatError(f"Missing required profile field(s): {names}")
+    return profile
 
 
 def _with_json_suffix(path: Path) -> Path:

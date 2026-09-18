@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python 3.13 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    env:
+      QT_QPA_PLATFORM: offscreen
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install Linux Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libegl1 libgl1
+      - name: Install project
+        run: python -m pip install -e ".[test]"
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Smoke-test the public automation contract
+        shell: bash
+        run: |
+          grim-gleaner profile-schema --output generated-profile.schema.json >/dev/null
+          cmp generated-profile.schema.json schemas/profile.schema.json
+          grim-gleaner profile-context \
+            --catalog-root artifacts/catalog \
+            --mastery playerclass05 \
+            --mastery playerclass08 \
+            --output generated-context.json >/dev/null

@@ -20,12 +20,21 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from gd_affix_relevance.catalog import SkillCatalog
+from gd_affix_relevance.automation import validate_profile_semantics
+from gd_affix_relevance.catalog import CatalogBundle, SkillCatalog
 from gd_affix_relevance.domain import BuildProfile
 from gd_affix_relevance.level_bands import LEVEL_BANDS
+from gd_affix_relevance.profile_provenance import (
+    ProfileProvenance,
+    save_profile_provenance,
+)
 from gd_affix_relevance.profile_store import load_profile, save_profile
 from gd_affix_relevance.ui.catalog import PROFILE_TABS, TabDefinition
 from gd_affix_relevance.ui.i18n import t
+from gd_affix_relevance.ui.profile_automation import (
+    ProfileAutomationWidget,
+    ProfileImportCandidate,
+)
 from gd_affix_relevance.ui.widgets import PackageAccordion
 from gd_affix_relevance.ui.skills_editor import SkillsEditor
 
@@ -42,12 +51,16 @@ class ProfileEditor(QWidget):
         parent: QWidget | None = None,
         *,
         skills: SkillCatalog | None = None,
+        catalog_bundle: CatalogBundle | None = None,
         profile_path: Path | None = None,
         profiles_root: Path | None = None,
         startup_notice: str = "",
     ) -> None:
         super().__init__(parent)
         self.profile = profile or BuildProfile()
+        self.skills = skills or SkillCatalog(())
+        self.catalog_bundle = catalog_bundle
+        self.pending_provenance: ProfileProvenance | None = None
         self.accordions: dict[str, PackageAccordion] = {}
         self.current_profile_path = Path(profile_path) if profile_path else None
         self.profiles_root = (
@@ -139,11 +152,22 @@ class ProfileEditor(QWidget):
                 self._build_tab(definition),
                 t(f"tab.{definition.tab_id}", default=definition.label),
             )
-        self.skills_editor = SkillsEditor(
-            self.profile, skills or SkillCatalog(()), self
-        )
+        self.skills_editor = SkillsEditor(self.profile, self.skills, self)
         self.skills_editor.changed.connect(self._skills_changed)
         self.tabs.addTab(self.skills_editor, t("profile.skills_tab"))
+        self.automation_widget = ProfileAutomationWidget(
+            self.profile,
+            self.catalog_bundle,
+            self.profiles_root,
+            self,
+        )
+        self.automation_widget.import_requested.connect(
+            self._import_generated_profile
+        )
+        self.tabs.addTab(
+            self.automation_widget,
+            t("profile.integrations_tab"),
+        )
         layout.addWidget(self.tabs, 1)
 
     def _build_tab(self, definition: TabDefinition) -> QScrollArea:
@@ -197,6 +221,7 @@ class ProfileEditor(QWidget):
 
     def _skills_changed(self) -> None:
         self._mark_unsaved()
+        self.automation_widget.refresh_from_profile()
         self.profile_changed.emit()
 
     def _conversion_source_changed(
@@ -209,6 +234,8 @@ class ProfileEditor(QWidget):
         """Save the active profile, primarily for UI actions and tests."""
 
         destination = save_profile(self.profile, path)
+        if self.pending_provenance is not None:
+            save_profile_provenance(destination, self.pending_provenance)
         self.current_profile_path = destination
         self.is_dirty = False
         self.file_status.setText(t("profile.saved_status", name=destination.name))
@@ -219,7 +246,28 @@ class ProfileEditor(QWidget):
     def load_from_path(self, path: Path) -> BuildProfile:
         """Load *path* into the existing profile object and refresh controls."""
 
-        loaded = load_profile(path)
+        self._replace_profile(load_profile(path))
+        self.pending_provenance = None
+        self.current_profile_path = Path(path)
+        self.is_dirty = False
+        self.file_status.setText(
+            t("profile.loaded_status", name=self.current_profile_path.name)
+        )
+        self.file_status.setToolTip(str(self.current_profile_path))
+        self.profile_path_changed.emit(self.current_profile_path)
+        return self.profile
+
+    def _replace_profile(self, loaded: BuildProfile) -> None:
+        if self.skills.skills:
+            validation = validate_profile_semantics(loaded, self.skills)
+            if not validation.valid:
+                details = "\n".join(
+                    f"{item.path}: {item.message}"
+                    for item in validation.errors
+                )
+                raise ValueError(
+                    t("automation.semantic_validation_failed", details=details)
+                )
         self.profile.name = loaded.name
         self.profile.weights.clear()
         for stat_id, weight in loaded.weights.items():
@@ -251,17 +299,10 @@ class ProfileEditor(QWidget):
         for accordion in self.accordions.values():
             accordion.refresh_from_profile()
         self.skills_editor.refresh_from_profile()
+        self.automation_widget.refresh_from_profile()
 
-        self.current_profile_path = Path(path)
-        self.is_dirty = False
-        self.file_status.setText(
-            t("profile.loaded_status", name=self.current_profile_path.name)
-        )
-        self.file_status.setToolTip(str(self.current_profile_path))
-        self.profile_path_changed.emit(self.current_profile_path)
         self.profile_metadata_changed.emit()
         self.profile_changed.emit()
-        return self.profile
 
     def new_profile(self) -> bool:
         """Reset every profile field after resolving unsaved changes."""
@@ -270,7 +311,10 @@ class ProfileEditor(QWidget):
             action = self._prompt_unsaved_action()
             if action == QMessageBox.StandardButton.Cancel:
                 return False
-            if action == QMessageBox.StandardButton.Save and not self._save_before_reset():
+            if (
+                action == QMessageBox.StandardButton.Save
+                and not self._save_before_reset()
+            ):
                 return False
 
         baseline = BuildProfile()
@@ -293,6 +337,8 @@ class ProfileEditor(QWidget):
         for accordion in self.accordions.values():
             accordion.refresh_from_profile()
         self.skills_editor.refresh_from_profile()
+        self.automation_widget.refresh_from_profile()
+        self.pending_provenance = None
         self.current_profile_path = None
         self.is_dirty = False
         self.file_status.setText(t("profile.new_profile_status"))
@@ -372,11 +418,71 @@ class ProfileEditor(QWidget):
         )
         if not selected:
             return False
+        if not self._resolve_unsaved_before_replace():
+            return False
         try:
             self.load_from_path(Path(selected))
         except (OSError, ValueError, TypeError) as error:
             QMessageBox.critical(self, t("profile.load_error_title"), str(error))
             return False
+        return True
+
+    def _import_generated_profile(self, value: object) -> None:
+        if isinstance(value, ProfileImportCandidate):
+            candidate = value
+        else:
+            # Compatibility for callers using the original file-only signal.
+            path = Path(value)
+            text = path.read_text(encoding="utf-8-sig")
+            candidate = ProfileImportCandidate(
+                load_profile(path),
+                ProfileProvenance.create(
+                    source_kind="file",
+                    source=str(path),
+                    imported_profile_text=text,
+                ),
+                path,
+            )
+        if not self._resolve_unsaved_before_replace():
+            self.automation_widget.set_import_result(
+                False, t("automation.import_cancelled")
+            )
+            return
+        try:
+            self._replace_profile(candidate.profile)
+        except (OSError, ValueError, TypeError) as error:
+            self.automation_widget.set_import_result(False, str(error))
+            QMessageBox.critical(
+                self, t("profile.load_error_title"), str(error)
+            )
+            return
+        # Imported automation output is always an unsaved draft. This prevents
+        # a later Save from silently overwriting the generator's source file.
+        self.pending_provenance = candidate.provenance
+        self.current_profile_path = None
+        self.is_dirty = True
+        source_name = (
+            candidate.source_path.name
+            if candidate.source_path is not None
+            else t("automation.clipboard_source")
+        )
+        self.file_status.setText(
+            t("automation.imported_draft_status", name=source_name)
+        )
+        self.file_status.setToolTip(candidate.provenance.source)
+        self.profile_path_changed.emit(None)
+        self.automation_widget.set_import_result(True, source_name)
+
+    def _resolve_unsaved_before_replace(self) -> bool:
+        if not self.is_dirty:
+            return True
+        action = self._prompt_unsaved(
+            t("profile.confirm_save_before_load")
+        )
+        if action == QMessageBox.StandardButton.Cancel:
+            return False
+        if action == QMessageBox.StandardButton.Save:
+            return self._save_before_reset()
         return True
 
     def _mark_unsaved(self) -> None:
