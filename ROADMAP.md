@@ -17,24 +17,30 @@ backend.
 - **Safe profile replacement:** manual and generated imports protect unsaved
   work; persisted profiles are checked for real stat/skill IDs and valid mastery
   relationships. One-rank transmuter skills are now selectable and valid.
+- **Reviewable imports and provenance:** file or clipboard candidates receive a
+  semantic before/after diff. Optional generator/source metadata and SHA-256
+  bindings are saved in a separate provenance sidecar, never scoring data.
+- **Local automation API:** a dependency-free, localhost-first HTTP service
+  exposes health, schema, context, validation, semantic diff, and bounded catalog
+  search endpoints with a discoverable OpenAPI document.
 - **Contributor runway:** documented setup/architecture and Linux + Windows CI.
 - **Privacy boundary:** no API key handling and no proprietary DBR upload path.
 
 ## Next: make integrations delightful
 
-1. **Profile provenance and richer previews**
-   - Add provenance metadata outside the scoring payload: source URL, generator,
-     catalog version, user edits, and a semantic before/after diff.
-   - Offer paste-from-clipboard alongside the file-based validation workflow.
+1. **Richer provenance review**
+   - Add a dedicated sidecar viewer, signature verification, and visual grouping
+     for large semantic diffs.
+   - Track subsequent user-edit history without polluting the scoring payload.
 2. **GrimTools bridge**
    - Import a build URL or exported build document.
    - Infer masteries, active skills, damage channels, conversions, attack style,
      and defensive gaps into an editable *draft*, never an opaque final answer.
-3. **Local automation server**
-   - Expose read-only catalog search, profile validation, scoring, and explanation
-     over localhost HTTP and Model Context Protocol (MCP).
-   - Publish an OpenAPI document so any language or automation platform can
-     generate a client without a bespoke SDK.
+3. **Broaden the local automation server**
+   - Add ranking/explanation endpoints and a Model Context Protocol (MCP) stdio
+     transport on top of the shipped localhost HTTP/OpenAPI service.
+   - Add opt-in authentication before supporting any non-loopback bind or write
+     operation.
 4. **Provider adapters as separate plugins**
    - Optional adapters for OpenAI-compatible APIs, Anthropic, Gemini, Ollama,
      llama.cpp, and command-line subprocesses.

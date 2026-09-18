@@ -8,6 +8,7 @@ from gd_affix_relevance.profile_store import (
     PROFILE_FILE_SCHEMA_VERSION,
     ProfileFormatError,
     load_profile,
+    load_profile_text,
     save_profile,
 )
 
@@ -92,6 +93,18 @@ def test_current_profile_schema_rejects_missing_and_unknown_fields(
         source.write_text(json.dumps(payload), encoding="utf-8")
         with pytest.raises(ProfileFormatError, match=message):
             load_profile(source)
+
+
+def test_profile_text_supports_clipboard_import() -> None:
+    payload = {
+        "schema_version": PROFILE_FILE_SCHEMA_VERSION,
+        **BuildProfile("Clipboard", {"health": 3}).to_dict(),
+    }
+
+    profile = load_profile_text(json.dumps(payload))
+
+    assert profile.name == "Clipboard"
+    assert profile.weight_for("health") == 3
 
 
 def test_profile_file_reports_malformed_json(tmp_path: Path) -> None:

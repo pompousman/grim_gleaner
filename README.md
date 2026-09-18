@@ -4,6 +4,7 @@ Recent Changes:
 Unreleased:
 - added a provider-neutral Integrations tab for context/schema export and safe profile validation/import
 - added semantic profile checks with typo suggestions and unsaved-change protection
+- added clipboard import, before/after profile diffs, and hash-bound provenance sidecars
 - restored one-rank transmuter skills to the profile skill selector
 - added contributor guidance and Windows/Linux continuous integration
 
@@ -51,12 +52,16 @@ grim-gleaner profile-context --catalog-root artifacts/catalog \
   --mastery playerclass05 --mastery playerclass08 --output context.json
 grim-gleaner validate-profile --catalog-root artifacts/catalog \
   --profile-file generated-profile.json
+# Optional localhost API with /openapi.json discovery:
+grim-gleaner serve-automation --catalog-root artifacts/catalog
 ```
 
 The context contains valid stat/skill IDs, weighting guidance, and a JSON
 Schema. The **Build Profile → Integrations** tab can save or copy that context,
-validate a candidate, and import it as an unsaved draft. No API keys are stored
-by Grim Gleaner, and generated files pass the same loader and semantic
+validate a file or clipboard candidate, preview a semantic before/after diff,
+and import it as an unsaved draft. Optional provenance is stored in a separate
+hash-bound sidecar when the draft is saved. No API keys are stored by Grim
+Gleaner, and generated files pass the same loader and semantic
 validation regardless of their source. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for human and agent
 contribution workflows. The larger direction—including a GrimTools bridge,

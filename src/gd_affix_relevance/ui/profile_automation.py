@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -12,6 +13,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -20,16 +22,26 @@ from PySide6.QtWidgets import (
 )
 
 from gd_affix_relevance.automation import (
+    ProfileDiff,
     ProfileValidationResult,
     build_profile_context,
+    compare_profiles,
     profile_json_schema,
     validate_profile_semantics,
 )
 from gd_affix_relevance.catalog import CatalogBundle
 from gd_affix_relevance.domain import BuildProfile
 from gd_affix_relevance.io_utils import atomic_write_text
-from gd_affix_relevance.profile_store import load_profile
+from gd_affix_relevance.profile_provenance import ProfileProvenance
+from gd_affix_relevance.profile_store import load_profile_text
 from gd_affix_relevance.ui.i18n import t
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileImportCandidate:
+    profile: BuildProfile
+    provenance: ProfileProvenance
+    source_path: Path | None = None
 
 
 class ProfileAutomationWidget(QWidget):
@@ -109,6 +121,20 @@ class ProfileAutomationWidget(QWidget):
         import_hint = QLabel(t("automation.import_hint"), import_frame)
         import_hint.setWordWrap(True)
         import_layout.addWidget(import_hint)
+
+        metadata_row = QHBoxLayout()
+        self.generator_edit = QLineEdit(import_frame)
+        self.generator_edit.setObjectName("automationMetadata")
+        self.generator_edit.setPlaceholderText(t("automation.generator_hint"))
+        self.generator_edit.setAccessibleName(t("automation.generator_label"))
+        metadata_row.addWidget(self.generator_edit)
+        self.source_url_edit = QLineEdit(import_frame)
+        self.source_url_edit.setObjectName("automationMetadata")
+        self.source_url_edit.setPlaceholderText(t("automation.source_url_hint"))
+        self.source_url_edit.setAccessibleName(t("automation.source_url_label"))
+        metadata_row.addWidget(self.source_url_edit)
+        import_layout.addLayout(metadata_row)
+
         import_buttons = QHBoxLayout()
         self.validate_button = QPushButton(
             t("automation.validate_button"), import_frame
@@ -126,6 +152,22 @@ class ProfileAutomationWidget(QWidget):
             lambda: self._choose_candidate(import_after_validation=True)
         )
         import_buttons.addWidget(self.import_button)
+        self.paste_button = QPushButton(
+            t("automation.paste_validate"), import_frame
+        )
+        self.paste_button.setObjectName("profileAction")
+        self.paste_button.clicked.connect(
+            lambda: self._candidate_from_clipboard(import_after_validation=False)
+        )
+        import_buttons.addWidget(self.paste_button)
+        self.paste_import_button = QPushButton(
+            t("automation.paste_import"), import_frame
+        )
+        self.paste_import_button.setObjectName("profileAction")
+        self.paste_import_button.clicked.connect(
+            lambda: self._candidate_from_clipboard(import_after_validation=True)
+        )
+        import_buttons.addWidget(self.paste_import_button)
         import_buttons.addStretch()
         import_layout.addLayout(import_buttons)
         self.diagnostics = QPlainTextEdit(import_frame)
@@ -142,6 +184,8 @@ class ProfileAutomationWidget(QWidget):
         self.copy_button.setEnabled(catalog_available)
         self.validate_button.setEnabled(catalog_available)
         self.import_button.setEnabled(catalog_available)
+        self.paste_button.setEnabled(catalog_available)
+        self.paste_import_button.setEnabled(catalog_available)
         if not catalog_available:
             self.diagnostics.setPlainText(t("automation.catalog_unavailable"))
         self.refresh_from_profile()
@@ -230,18 +274,52 @@ class ProfileAutomationWidget(QWidget):
             return
         candidate_path = Path(selected)
         try:
-            candidate = load_profile(candidate_path)
+            text = candidate_path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeError) as error:
+            self._show_invalid(error)
+            return
+        self._evaluate_candidate(
+            text,
+            source_kind="file",
+            source=str(candidate_path),
+            source_path=candidate_path,
+            import_after_validation=import_after_validation,
+        )
+
+    def _candidate_from_clipboard(self, *, import_after_validation: bool) -> None:
+        text = QApplication.clipboard().text().strip()
+        if not text:
+            self._show_invalid(t("automation.clipboard_empty"))
+            return
+        self._evaluate_candidate(
+            text,
+            source_kind="clipboard",
+            source=t("automation.clipboard_source"),
+            source_path=None,
+            import_after_validation=import_after_validation,
+        )
+
+    def _evaluate_candidate(
+        self,
+        text: str,
+        *,
+        source_kind: str,
+        source: str,
+        source_path: Path | None,
+        import_after_validation: bool,
+    ) -> None:
+        try:
+            profile = load_profile_text(text)
             if self.catalog is None:
                 raise ValueError(t("automation.catalog_unavailable"))
-            result = validate_profile_semantics(candidate, self.catalog)
-        except (OSError, TypeError, ValueError) as error:
-            self.diagnostics.setPlainText(
-                t("automation.invalid_file", error=error)
-            )
+            result = validate_profile_semantics(profile, self.catalog)
+        except (TypeError, ValueError) as error:
+            self._show_invalid(error)
             return
 
+        diff = compare_profiles(self.profile, profile)
         self.diagnostics.setPlainText(
-            self._format_validation(candidate, result)
+            self._format_validation(profile, result, diff)
         )
         if not import_after_validation or not result.valid:
             return
@@ -250,20 +328,34 @@ class ProfileAutomationWidget(QWidget):
             t("automation.confirm_title"),
             t(
                 "automation.confirm_body",
-                name=candidate.name,
-                stats=len(candidate.weights),
-                skills=len(candidate.skill_weights),
+                name=profile.name,
+                stats=len(profile.weights),
+                skills=len(profile.skill_weights),
+                changes=len(diff.changes),
             ),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
-        if answer == QMessageBox.StandardButton.Yes:
-            self.import_requested.emit(candidate_path)
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        provenance = ProfileProvenance.create(
+            source_kind=source_kind,
+            source=source,
+            generator=self.generator_edit.text(),
+            source_url=self.source_url_edit.text(),
+            catalog_game_version=self.catalog.manifest.game_version,
+            catalog_schema_version=self.catalog.manifest.schema_version,
+            imported_profile_text=text,
+        )
+        self.import_requested.emit(
+            ProfileImportCandidate(profile, provenance, source_path)
+        )
 
     def _format_validation(
         self,
         profile: BuildProfile,
         result: ProfileValidationResult,
+        diff: ProfileDiff,
     ) -> str:
         lines = [
             t(
@@ -289,7 +381,27 @@ class ProfileAutomationWidget(QWidget):
                     values=", ".join(diagnostic.suggestions),
                 )
             lines.append(line)
+        lines.append("")
+        lines.append(
+            t(
+                "automation.diff_summary",
+                changes=len(diff.changes),
+                added=diff.added,
+                removed=diff.removed,
+                modified=diff.modified,
+            )
+        )
+        for change in diff.changes:
+            lines.append(
+                f"{change.category}.{change.key}: "
+                f"{change.before!s} → {change.after!s}"
+            )
         return "\n".join(lines)
+
+    def _show_invalid(self, error: object) -> None:
+        self.diagnostics.setPlainText(
+            t("automation.invalid_file", error=error)
+        )
 
     def set_import_result(self, success: bool, message: str) -> None:
         prefix = (

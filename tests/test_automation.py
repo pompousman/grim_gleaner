@@ -7,6 +7,7 @@ import pytest
 
 from gd_affix_relevance.automation import (
     build_profile_context,
+    compare_profiles,
     profile_json_schema,
     validate_profile_semantics,
 )
@@ -79,6 +80,34 @@ def test_semantic_validation_reports_unknown_and_cross_mastery_ids(
         for diagnostic in result.errors
     )
     assert any("unselected mastery" in item.message for item in result.errors)
+
+
+def test_profile_diff_is_stable_and_semantic() -> None:
+    before = BuildProfile(
+        "Before",
+        {"health": 2, "fire_damage_percent": 3},
+        masteries=("playerclass01", "playerclass02"),
+    )
+    after = BuildProfile(
+        "After",
+        {"health": 4, "aether_damage_percent": 4},
+        masteries=("playerclass05", "playerclass08"),
+    )
+
+    diff = compare_profiles(before, after)
+
+    assert diff.added == 1
+    assert diff.removed == 1
+    assert diff.modified == 4
+    assert [change.key for change in diff.changes[:3]] == [
+        "name",
+        "1",
+        "2",
+    ]
+    assert any(
+        change.key == "health" and change.before == 2 and change.after == 4
+        for change in diff.changes
+    )
 
 
 def test_profile_schema_is_strict_and_versioned() -> None:

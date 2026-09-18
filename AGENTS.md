@@ -54,7 +54,13 @@ grim-gleaner profile-context --catalog-root artifacts/catalog \
   --mastery playerclass05 --mastery playerclass08 --output context.json
 grim-gleaner validate-profile --catalog-root artifacts/catalog \
   --profile-file candidate.json
+grim-gleaner diff-profiles --before current.json --after candidate.json
+grim-gleaner verify-profile-provenance --profile-file accepted.json
+grim-gleaner serve-automation --catalog-root artifacts/catalog
 ```
+
+The local HTTP API publishes `/openapi.json`, defaults to `127.0.0.1:8765`,
+and rejects non-loopback binds until an authenticated mode exists.
 
 `profile-context` is plain JSON and is the canonical discovery surface for any
 model, script, editor extension, or web client. Integrations should not require

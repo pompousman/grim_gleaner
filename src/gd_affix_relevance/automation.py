@@ -46,6 +46,96 @@ class ProfileValidationResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ProfileChange:
+    category: str
+    key: str
+    before: object
+    after: object
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileDiff:
+    changes: tuple[ProfileChange, ...]
+
+    @property
+    def added(self) -> int:
+        return sum(_change_is_empty(change, before=True) for change in self.changes)
+
+    @property
+    def removed(self) -> int:
+        return sum(_change_is_empty(change, before=False) for change in self.changes)
+
+    @property
+    def modified(self) -> int:
+        return len(self.changes) - self.added - self.removed
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "summary": {
+                "changes": len(self.changes),
+                "added": self.added,
+                "removed": self.removed,
+                "modified": self.modified,
+            },
+            "changes": [asdict(change) for change in self.changes],
+        }
+
+
+def compare_profiles(before: BuildProfile, after: BuildProfile) -> ProfileDiff:
+    """Return a stable semantic diff suitable for previews and code review."""
+
+    changes: list[ProfileChange] = []
+
+    def add_scalar(category: str, key: str, old: object, new: object) -> None:
+        if old != new:
+            changes.append(ProfileChange(category, key, old, new))
+
+    add_scalar("profile", "name", before.name, after.name)
+    add_scalar("profile", "level_band", before.level_band, after.level_band)
+    for index in range(2):
+        add_scalar(
+            "mastery",
+            str(index + 1),
+            before.masteries[index],
+            after.masteries[index],
+        )
+    add_scalar(
+        "resistance_cap",
+        "enabled",
+        before.resistance_cap_enabled,
+        after.resistance_cap_enabled,
+    )
+    for category, old_values, new_values in (
+        ("stat", before.weights, after.weights),
+        ("skill", before.skill_weights, after.skill_weights),
+        (
+            "resistance_cap",
+            before.resistance_cap_weights,
+            after.resistance_cap_weights,
+        ),
+    ):
+        for key in sorted(set(old_values) | set(new_values)):
+            add_scalar(
+                category,
+                key,
+                old_values.get(key, 0),
+                new_values.get(key, 0),
+            )
+    destinations = sorted(
+        set(before.excluded_conversion_sources)
+        | set(after.excluded_conversion_sources)
+    )
+    for destination in destinations:
+        add_scalar(
+            "conversion_exclusions",
+            destination,
+            tuple(sorted(before.excluded_conversion_sources.get(destination, ()))),
+            tuple(sorted(after.excluded_conversion_sources.get(destination, ()))),
+        )
+    return ProfileDiff(tuple(changes))
+
+
 def build_profile_context(
     catalog: CatalogBundle,
     *,
@@ -338,6 +428,19 @@ def validate_profile_semantics(
         errors=tuple(errors),
         warnings=tuple(warnings),
     )
+
+
+def _change_is_empty(change: ProfileChange, *, before: bool) -> bool:
+    value = change.before if before else change.after
+    if change.category in {"stat", "skill"}:
+        return value == 0
+    if change.category == "resistance_cap" and change.key != "enabled":
+        return value == 0
+    if change.category == "mastery":
+        return value == ""
+    if change.category == "conversion_exclusions":
+        return value == ()
+    return False
 
 
 def _unknown_id_diagnostic(

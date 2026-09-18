@@ -63,6 +63,15 @@ def test_every_cli_command_has_a_dispatch_handler() -> None:
             "--profile-file",
             "profile.json",
         ),
+        (
+            "diff-profiles",
+            "--before",
+            "before.json",
+            "--after",
+            "after.json",
+        ),
+        ("verify-profile-provenance", "--profile-file", "profile.json"),
+        ("serve-automation", "--catalog-root", "catalog"),
     )
 
     for arguments in command_arguments:

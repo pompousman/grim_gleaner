@@ -6,13 +6,16 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import asdict
 from pathlib import Path
 
 from gd_affix_relevance.automation import (
     build_profile_context,
+    compare_profiles,
     profile_json_schema,
     validate_profile_semantics,
 )
+from gd_affix_relevance.automation_server import create_server
 from gd_affix_relevance.catalog import CatalogBundle
 from gd_affix_relevance.catalog.compiler import compile_catalog_bundle
 from gd_affix_relevance.domain import LocalizationEntry, locale_for_code
@@ -40,6 +43,7 @@ from gd_affix_relevance.normalization.affix_reachability import (
     build_affix_reference_statuses,
     write_affix_reference_report,
 )
+from gd_affix_relevance.profile_provenance import verify_profile_provenance
 from gd_affix_relevance.profile_store import load_profile
 from gd_affix_relevance.output import generate_rainbow_output
 from gd_affix_relevance.release_assembly import assemble_release
@@ -331,6 +335,46 @@ def _run_profile_schema(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_automation_server(args: argparse.Namespace) -> int:
+    try:
+        bundle = CatalogBundle.load(args.catalog_root)
+        server = create_server(bundle, args.host, args.port)
+    except (OSError, TypeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    host, port = server.server_address[:2]
+    print(f"Grim Gleaner automation API listening on http://{host}:{port}")
+    print("Local access only by default; press Ctrl+C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+def _run_diff_profiles(args: argparse.Namespace) -> int:
+    try:
+        before = load_profile(args.before)
+        after = load_profile(args.after)
+    except (OSError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    _print_json_summary(compare_profiles(before, after).as_dict())
+    return 0
+
+
+def _run_verify_profile_provenance(args: argparse.Namespace) -> int:
+    try:
+        result = verify_profile_provenance(args.profile_file)
+    except (OSError, ValueError) as error:
+        _print_json_summary({"valid": False, "error": str(error)})
+        return 2
+    _print_json_summary(asdict(result))
+    return 0 if result.valid else 2
+
+
 def _run_validate_profile(args: argparse.Namespace) -> int:
     try:
         profile = load_profile(args.profile_file)
@@ -540,6 +584,30 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--catalog-root", type=Path, required=True)
     validate.add_argument("--profile-file", type=Path, required=True)
     validate.set_defaults(handler=_run_validate_profile)
+
+    diff = subparsers.add_parser(
+        "diff-profiles",
+        help="emit a semantic, machine-readable profile comparison",
+    )
+    diff.add_argument("--before", type=Path, required=True)
+    diff.add_argument("--after", type=Path, required=True)
+    diff.set_defaults(handler=_run_diff_profiles)
+
+    provenance = subparsers.add_parser(
+        "verify-profile-provenance",
+        help="verify a saved profile against its provenance sidecar",
+    )
+    provenance.add_argument("--profile-file", type=Path, required=True)
+    provenance.set_defaults(handler=_run_verify_profile_provenance)
+
+    server = subparsers.add_parser(
+        "serve-automation",
+        help="serve the deterministic integration API on localhost",
+    )
+    server.add_argument("--catalog-root", type=Path, required=True)
+    server.add_argument("--host", default="127.0.0.1")
+    server.add_argument("--port", type=int, default=8765)
+    server.set_defaults(handler=_run_automation_server)
     return parser
 
 

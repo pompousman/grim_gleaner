@@ -52,9 +52,25 @@ def load_profile(path: Path) -> BuildProfile:
 
     source = Path(path)
     try:
-        payload: Any = json.loads(source.read_text(encoding="utf-8-sig"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        text = source.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeError) as error:
         raise ProfileFormatError(f"Could not read profile: {error}") from error
+    return load_profile_text(text)
+
+
+def load_profile_text(text: str) -> BuildProfile:
+    """Validate profile JSON supplied by a clipboard or integration."""
+
+    try:
+        payload: Any = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as error:
+        raise ProfileFormatError(f"Could not read profile: {error}") from error
+    return load_profile_payload(payload)
+
+
+def load_profile_payload(payload: object) -> BuildProfile:
+    """Validate an already-decoded profile object."""
+
     if not isinstance(payload, dict):
         raise ProfileFormatError("Profile file must contain a JSON object")
 

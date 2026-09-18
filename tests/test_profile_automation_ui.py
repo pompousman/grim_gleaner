@@ -12,7 +12,10 @@ from PySide6.QtWidgets import QApplication, QFileDialog, QMessageBox
 from gd_affix_relevance.catalog import CatalogBundle
 from gd_affix_relevance.domain import BuildProfile
 from gd_affix_relevance.profile_store import save_profile
-from gd_affix_relevance.ui.profile_automation import ProfileAutomationWidget
+from gd_affix_relevance.ui.profile_automation import (
+    ProfileAutomationWidget,
+    ProfileImportCandidate,
+)
 from gd_affix_relevance.ui.profile_editor import ProfileEditor
 
 
@@ -101,7 +104,7 @@ def test_ui_confirms_valid_profile_before_import(
     )
     path = save_profile(candidate, tmp_path / "valid.json")
     widget = ProfileAutomationWidget(BuildProfile(), catalog, tmp_path)
-    imported: list[Path] = []
+    imported: list[ProfileImportCandidate] = []
     widget.import_requested.connect(imported.append)
     monkeypatch.setattr(
         QFileDialog,
@@ -116,8 +119,42 @@ def test_ui_confirms_valid_profile_before_import(
 
     widget._choose_candidate(import_after_validation=True)
 
-    assert imported == [path]
+    assert len(imported) == 1
+    assert imported[0].source_path == path
+    assert imported[0].profile.name == "Valid generated profile"
+    assert imported[0].provenance.source_kind == "file"
     assert "VALID" in widget.diagnostics.toPlainText()
+    assert "Semantic changes" in widget.diagnostics.toPlainText()
+
+
+def test_ui_can_validate_and_import_clipboard_profile(
+    catalog: CatalogBundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = _application()
+    candidate = BuildProfile(
+        name="Clipboard build",
+        masteries=("playerclass05", "playerclass08"),
+        weights={"aether_damage_percent": 4},
+    )
+    payload = {"schema_version": 5, **candidate.to_dict()}
+    app.clipboard().setText(json.dumps(payload))
+    widget = ProfileAutomationWidget(BuildProfile(), catalog, PROJECT_ROOT)
+    widget.generator_edit.setText("Ollama")
+    imported: list[ProfileImportCandidate] = []
+    widget.import_requested.connect(imported.append)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+    widget._candidate_from_clipboard(import_after_validation=True)
+
+    assert len(imported) == 1
+    assert imported[0].source_path is None
+    assert imported[0].provenance.source_kind == "clipboard"
+    assert imported[0].provenance.generator == "Ollama"
 
 
 def test_editor_rejects_semantically_invalid_profile(
@@ -165,3 +202,11 @@ def test_editor_imports_generated_profile_as_unsaved_draft(
     assert editor.current_profile_path is None
     assert editor.is_dirty
     assert "Imported draft" in editor.file_status.text()
+
+    saved = editor.save_to_path(tmp_path / "accepted.json")
+    sidecar = tmp_path / "accepted.provenance.json"
+    assert saved.is_file()
+    assert sidecar.is_file()
+    provenance = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert provenance["source_kind"] == "file"
+    assert provenance["saved_profile_sha256"]
