@@ -23,6 +23,7 @@ from gd_affix_relevance.game_localization import prepare_game_item_tags
 from gd_affix_relevance.importers.localization_parser import (
     load_localization_directory,
 )
+from gd_affix_relevance.mcp_server import serve_stdio
 from gd_affix_relevance.normalization.field_inventory import (
     build_field_inventory,
     write_inventory_reports,
@@ -362,6 +363,21 @@ def _run_automation_server(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_mcp_server(args: argparse.Namespace) -> int:
+    try:
+        bundle = CatalogBundle.load(args.catalog_root)
+    except (OSError, TypeError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    # stdout is reserved for JSON-RPC messages; diagnostics go to stderr so
+    # they never corrupt the MCP stream.
+    print("Grim Gleaner MCP server speaking JSON-RPC on stdio", file=sys.stderr)
+    try:
+        return serve_stdio(bundle)
+    except KeyboardInterrupt:
+        return 0
+
+
 def _run_diff_profiles(args: argparse.Namespace) -> int:
     try:
         before = load_profile(args.before)
@@ -681,6 +697,13 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8765)
     server.set_defaults(handler=_run_automation_server)
+
+    mcp = subparsers.add_parser(
+        "serve-mcp",
+        help="serve the automation tools over the Model Context Protocol on stdio",
+    )
+    mcp.add_argument("--catalog-root", type=Path, required=True)
+    mcp.set_defaults(handler=_run_mcp_server)
     return parser
 
 

@@ -32,6 +32,49 @@ class AutomationService:
 
     def __init__(self, catalog: CatalogBundle) -> None:
         self.catalog = catalog
+        self._search_index = self._build_search_index()
+
+    def _build_search_index(self) -> tuple[tuple[dict[str, object], str], ...]:
+        """Precompute casefolded search rows once for the server lifetime."""
+
+        rows: list[tuple[dict[str, object], str]] = []
+        for skill in self.catalog.skills.skills:
+            rows.append(
+                (
+                    {
+                        "kind": "skill",
+                        "id": skill.skill_id,
+                        "name": skill.display_name,
+                        "mastery_id": skill.mastery_id,
+                    },
+                    f"{skill.display_name} {skill.skill_id}".casefold(),
+                )
+            )
+        for affix in self.catalog.affixes.affixes:
+            rows.append(
+                (
+                    {
+                        "kind": "affix",
+                        "id": affix.affix_id,
+                        "name": affix.display_name,
+                        "affix_kind": affix.kind,
+                    },
+                    f"{affix.display_name} {affix.affix_id}".casefold(),
+                )
+            )
+        for item in self.catalog.items.all_items():
+            rows.append(
+                (
+                    {
+                        "kind": "item",
+                        "id": item.item_id,
+                        "name": item.display_name,
+                        "item_type": item.family,
+                    },
+                    f"{item.display_name} {item.item_id}".casefold(),
+                )
+            )
+        return tuple(rows)
 
     def health(self) -> dict[str, object]:
         return {
@@ -117,44 +160,11 @@ class AutomationService:
         if kind not in allowed:
             raise ValueError(f"unknown search kind: {kind}")
         results: list[dict[str, object]] = []
-
-        def add(candidate: dict[str, object], text: str) -> None:
-            if len(results) < limit and needle in text.casefold():
+        for candidate, folded in self._search_index:
+            if len(results) >= limit:
+                break
+            if (kind == "all" or candidate["kind"] == kind) and needle in folded:
                 results.append(candidate)
-
-        if kind in {"all", "skill"}:
-            for skill in self.catalog.skills.skills:
-                add(
-                    {
-                        "kind": "skill",
-                        "id": skill.skill_id,
-                        "name": skill.display_name,
-                        "mastery_id": skill.mastery_id,
-                    },
-                    f"{skill.display_name} {skill.skill_id}",
-                )
-        if kind in {"all", "affix"}:
-            for affix in self.catalog.affixes.affixes:
-                add(
-                    {
-                        "kind": "affix",
-                        "id": affix.affix_id,
-                        "name": affix.display_name,
-                        "affix_kind": affix.kind,
-                    },
-                    f"{affix.display_name} {affix.affix_id}",
-                )
-        if kind in {"all", "item"}:
-            for item in self.catalog.items.all_items():
-                add(
-                    {
-                        "kind": "item",
-                        "id": item.item_id,
-                        "name": item.display_name,
-                        "item_type": item.family,
-                    },
-                    f"{item.display_name} {item.item_id}",
-                )
         return {"query": query, "kind": kind, "results": results}
 
 

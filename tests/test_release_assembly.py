@@ -115,7 +115,7 @@ def _write_minimal_catalog(root: Path) -> None:
 
 
 def _write_tag_sources(data_root: Path, *, value: str = "Value") -> None:
-    for filename, relative_path in TAG_SOURCES.items():
+    for _filename, relative_path in TAG_SOURCES.items():
         path = data_root / relative_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"tag{path.parent.parent.name}={value}\n", encoding="utf-8")

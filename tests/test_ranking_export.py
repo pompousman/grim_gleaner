@@ -222,7 +222,7 @@ def test_ranking_explains_matched_and_unmatched_affix_stats() -> None:
     )
 
     assert result["protocol"] == "grim-gleaner-profile-ranking"
-    assert result["protocol_version"] == 1
+    assert result["protocol_version"] == 2
     assert result["request"] == {
         "kinds": ["affix"],
         "slots": ["ring"],
@@ -620,3 +620,182 @@ def test_real_catalog_ranking_is_deterministic_and_explainable(
 
     top_unique = ring["uniques"][0]
     assert top_unique["sources"]["acquisition"]
+
+
+def test_ranking_hints_match_the_real_engine_when_applied() -> None:
+    bundle = _bundle(
+        affixes=(
+            _affix(
+                "prefix:tagStorm",
+                "Storming",
+                "prefix",
+                _affix_variant(
+                    "flat_lightning_damage",
+                    "health",
+                ),
+            ),
+        ),
+    )
+    profile = BuildProfile("Lightning", {"flat_lightning_damage": 4})
+
+    result = build_profile_ranking(
+        bundle, profile, kinds=("affix",), slot_ids=("ring",)
+    )
+    entry = result["slots"]["ring"]["prefixes"][0]
+    assert entry["grade"] == "C"
+    assert entry["next_grade_hints"], "expected at least one counterfactual"
+
+    hint = entry["next_grade_hints"][0]
+    assert hint["stat_id"] == "health"
+    assert 1 <= hint["weight"] <= 4
+    assert hint["label"] == "Health (Flat)"
+
+    # Applying the hint to the profile must reproduce the promised grade
+    # through the normal ranking path.
+    adjusted = BuildProfile(
+        "Lightning",
+        {"flat_lightning_damage": 4, "health": hint["weight"]},
+    )
+    re_ranked = build_profile_ranking(
+        bundle, adjusted, kinds=("affix",), slot_ids=("ring",)
+    )
+    new_entry = next(
+        candidate
+        for candidate in re_ranked["slots"]["ring"]["prefixes"]
+        if candidate["id"] == "prefix:tagStorm"
+    )
+    assert new_entry["grade"] == hint["resulting_grade"]
+    assert new_entry["score"]["effective_score"] == pytest.approx(
+        hint["resulting_score"]
+    )
+
+
+def test_ranking_hints_report_when_no_single_stat_reaches_next_grade() -> None:
+    bundle = _bundle(
+        affixes=(
+            _affix(
+                "prefix:tagDilute",
+                "Diluted",
+                "prefix",
+                _affix_variant(
+                    "flat_lightning_damage",
+                    "lightning_damage_percent",
+                    "health",
+                    "fire_resistance",
+                    "cold_resistance",
+                ),
+            ),
+        ),
+    )
+    profile = BuildProfile(
+        "Lightning",
+        {"flat_lightning_damage": 4, "lightning_damage_percent": 4},
+    )
+
+    result = build_profile_ranking(
+        bundle, profile, kinds=("affix",), slot_ids=("ring",)
+    )
+
+    entry = result["slots"]["ring"]["prefixes"][0]
+    assert entry["grade"] == "B"
+    assert entry["next_grade_hints"] == []
+
+
+def test_ranking_hints_cover_selected_skill_weights() -> None:
+    skill_id = "records/skills/playerclass05/primal_strike.dbr"
+    bundle = _bundle(
+        affixes=(
+            _affix(
+                "suffix:tagWitch",
+                "of the Witch",
+                "suffix",
+                _affix_variant(
+                    "skill_bonus:" + skill_id,
+                    "health",
+                ),
+            ),
+        ),
+        skills=(
+            _skill(skill_id, "Primal Strike", mastery_id="playerclass05"),
+        ),
+    )
+    profile = BuildProfile("Shaman", {"health": 4})
+
+    result = build_profile_ranking(
+        bundle, profile, kinds=("affix",), slot_ids=("ring",)
+    )
+    entry = result["slots"]["ring"]["suffixes"][0]
+    hints = entry["next_grade_hints"]
+    skill_hint = next(
+        (hint for hint in hints if hint["stat_id"] == "skill_bonus:" + skill_id),
+        None,
+    )
+    assert skill_hint is not None
+    assert skill_hint["label"] == "Skill Bonus: Primal Strike"
+
+    adjusted = BuildProfile(
+        "Shaman",
+        {"health": 4},
+        skill_weights={skill_id: skill_hint["weight"]},
+    )
+    re_ranked = build_profile_ranking(
+        bundle, adjusted, kinds=("affix",), slot_ids=("ring",)
+    )
+    new_entry = next(
+        candidate
+        for candidate in re_ranked["slots"]["ring"]["suffixes"]
+        if candidate["id"] == "suffix:tagWitch"
+    )
+    assert new_entry["grade"] == skill_hint["resulting_grade"]
+
+
+def test_ranking_hints_in_cap_mode_adjust_resistance_cap_weights() -> None:
+    augment = _item(
+        "records/items/augment/warding.dbr",
+        "Warding Salve",
+        _item_variant(
+            item_class="",
+            applicable_slots=("Ring",),
+            properties=(
+                ItemProperty("flat_lightning_damage", "flat_lightning_damage", {}),
+                ItemProperty("fire_resistance", "fire_resistance", {}),
+            ),
+            stat_lines=(
+                "[x]-[y] Lightning Damage",
+                "+[x]% Fire Resistance",
+            ),
+        ),
+    )
+    bundle = _bundle(augments=(augment,))
+    profile = BuildProfile(
+        "Cap",
+        {"flat_lightning_damage": 4},
+        resistance_cap_enabled=True,
+        resistance_cap_weights={},
+    )
+
+    result = build_profile_ranking(
+        bundle, profile, kinds=("augment",), slot_ids=("ring",)
+    )
+    entry = result["slots"]["ring"]["augments"][0]
+    assert entry["next_grade_hints"]
+
+    hint = entry["next_grade_hints"][0]
+    assert hint["stat_id"] == "fire_resistance"
+
+    # In cap mode the user action is a resistance-cap weight, and applying it
+    # must reproduce the promised grade.
+    adjusted = BuildProfile(
+        "Cap",
+        {"flat_lightning_damage": 4},
+        resistance_cap_enabled=True,
+        resistance_cap_weights={"fire_resistance": hint["weight"]},
+    )
+    re_ranked = build_profile_ranking(
+        bundle, adjusted, kinds=("augment",), slot_ids=("ring",)
+    )
+    new_entry = re_ranked["slots"]["ring"]["augments"][0]
+    assert new_entry["grade"] == hint["resulting_grade"]
+    assert new_entry["score"]["effective_score"] == pytest.approx(
+        hint["resulting_score"]
+    )

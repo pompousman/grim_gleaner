@@ -2,6 +2,9 @@
 
 Recent Changes:
 Unreleased:
+- added a Model Context Protocol (MCP) stdio server: `grim-gleaner serve-mcp` exposes context, validation, ranking, diff, and search as MCP tools for desktop assistants and IDE agents
+- added next-grade counterfactual hints to ranking results: each match now suggests the cheapest user weight that would raise its grade
+- fixed the legacy gear-slot label resolver used by hand-built catalogs: component-style labels (1H Melee, Helm, Shield, Off-hand) and compound lists now resolve every part instead of silently dropping weapon and armor slots
 - added explainable gear rankings to the automation API: `rank-profile` CLI command and `POST /v1/ranking` return per-slot affix/unique/component/augment matches with matched stat weights, unmatched stats, and grade thresholds
 - added a provider-neutral Integrations tab for context/schema export and safe profile validation/import
 - added semantic profile checks with typo suggestions and unsaved-change protection
@@ -57,6 +60,8 @@ grim-gleaner rank-profile --catalog-root artifacts/catalog \
   --profile-file generated-profile.json --kind affix --slot ring
 # Optional localhost API with /openapi.json discovery:
 grim-gleaner serve-automation --catalog-root artifacts/catalog
+# Optional Model Context Protocol stdio server for desktop assistants:
+grim-gleaner serve-mcp --catalog-root artifacts/catalog
 ```
 
 The context contains valid stat/skill IDs, weighting guidance, and a JSON
@@ -67,9 +72,11 @@ hash-bound sidecar when the draft is saved. No API keys are stored by Grim
 Gleaner, and generated files pass the same loader and semantic
 validation regardless of their source. `rank-profile` (or `POST /v1/ranking`
 on the automation server) returns the same explainable per-slot ranking as the
-Gear Grades screen—matched stat weights, unmatched stats, and grade
-thresholds—so an assistant can justify its suggestions with the same
-deterministic engine. See
+Gear Grades screen—matched stat weights, unmatched stats, grade thresholds,
+and "what would move this to the next grade?" counterfactual hints—so an
+assistant can justify its suggestions with the same deterministic engine.
+`serve-mcp` exposes these operations as Model Context Protocol tools over
+stdio for AI clients that speak MCP, still fully local and offline. See
 [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for human and agent
 contribution workflows. The larger direction—including a GrimTools bridge,
 local MCP/OpenAPI service, whole-loadout optimization, and community profile

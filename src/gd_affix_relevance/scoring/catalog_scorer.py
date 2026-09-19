@@ -298,7 +298,10 @@ def affix_variants_for_profile(
                 _eligible_variant_level(value, profile)
                 for value in candidates
             )
-            level_for = lambda value: _eligible_variant_level(value, profile)
+
+            def level_for(value: AffixVariantDefinition) -> int:
+                return _eligible_variant_level(value, profile)
+
         elif include_future_fallback:
             candidates = group
             selected_level = min(_variant_first_level(value) for value in candidates)

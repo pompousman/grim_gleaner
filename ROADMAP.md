@@ -23,7 +23,8 @@ backend.
 - **Local automation API:** a dependency-free, localhost-first HTTP service
   exposes health, schema, context, validation, semantic diff, bounded catalog
   search, and explainable per-slot ranking endpoints with a discoverable
-  OpenAPI document.
+  OpenAPI document, plus an MCP stdio server exposing the same operations as
+  tools for AI clients.
 - **Contributor runway:** documented setup/architecture and Linux + Windows CI.
 - **Privacy boundary:** no API key handling and no proprietary DBR upload path.
 
@@ -42,8 +43,9 @@ backend.
      matching `grim-gleaner rank-profile` CLI command return per-slot matches
      with matched stat weights, unmatched stat IDs, coverage, and grade
      thresholds—the same deterministic engine as the Gear Grades screen.
-   - Add a Model Context Protocol (MCP) stdio transport on top of the shipped
-     localhost HTTP/OpenAPI service.
+   - Shipped: a Model Context Protocol (MCP) stdio transport
+     (`grim-gleaner serve-mcp`) exposing context, schema, validation, diff,
+     ranking, and search as MCP tools over newline-delimited JSON-RPC 2.0.
    - Add opt-in authentication before supporting any non-loopback bind or write
      operation.
 4. **Provider adapters as separate plugins**
@@ -56,9 +58,10 @@ backend.
 
 - **Explainable grades:** the ranking API and Gear Grades view now share one
   deterministic engine and both expose matched stat weights, unmatched stat
-  IDs, coverage, and grade thresholds. Remaining: surface positive signals and
-  dilution costs inside the UI detail views, level-band assumptions, and
-  "what would move this from A to S?" counterfactuals.
+  IDs, coverage, and grade thresholds; ranking results also carry
+  "what would move this to the next grade?" counterfactual hints computed by
+  re-scoring under the real engine. Remaining: surface the same signals inside
+  the UI detail views and capture level-band assumptions.
 - **Cap-aware profiles:** optionally capture current resistances, speed caps, OA/DA,
   and conversion state so marginal value replaces static relevance.
 - **Roll-aware evaluation:** where legally and technically feasible, accept an

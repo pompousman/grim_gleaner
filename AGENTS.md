@@ -59,6 +59,7 @@ grim-gleaner rank-profile --catalog-root artifacts/catalog \
 grim-gleaner diff-profiles --before current.json --after candidate.json
 grim-gleaner verify-profile-provenance --profile-file accepted.json
 grim-gleaner serve-automation --catalog-root artifacts/catalog
+grim-gleaner serve-mcp --catalog-root artifacts/catalog
 ```
 
 The local HTTP API publishes `/openapi.json`, defaults to `127.0.0.1:8765`,
@@ -71,5 +72,11 @@ users to submit game data or API keys to Grim Gleaner.
 `rank-profile` (and `POST /v1/ranking` on the local server) returns the same
 explainable ranking the Gear Grades screen shows: top affixes, uniques,
 components, and augments per slot, with matched stat weights, unmatched stat
-IDs, coverage, and grade thresholds. Profiles must pass normal loading plus
-semantic validation before they are ranked.
+IDs, coverage, grade thresholds, and next-grade counterfactual hints ("weight
+Electrocute Damage at 3 to move this from C to B"). Profiles must pass normal
+loading plus semantic validation before they are ranked.
+
+`serve-mcp` exposes the same operations as MCP tools over a stdio
+JSON-RPC 2.0 transport (`initialize`, `tools/list`, `tools/call`) for
+desktop assistants and IDE agents. It speaks only to stdin/stdout and works
+with networking disabled.

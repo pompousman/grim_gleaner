@@ -4,11 +4,15 @@ The JSON produced here is deliberately plain data, mirroring
 ``automation.py``: an agent, script, editor extension, or web client can
 consume it without an SDK or a vendor account.  Every ranked entry carries
 the signals behind its grade so integrations can explain *why* something
-ranked where it did instead of trusting an opaque score.
+ranked where it did instead of trusting an opaque score, plus counterfactual
+"next grade" hints describing which of the entry's own stats would raise the
+grade if the user weighted them.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from gd_affix_relevance.catalog import CatalogBundle
@@ -16,9 +20,11 @@ from gd_affix_relevance.domain import BuildProfile
 from gd_affix_relevance.scoring.catalog_scorer import (
     GRADE_THRESHOLDS,
     RankedAffixVariant,
+    RelevanceScore,
     minimum_score_for_grade,
     profile_weight_for_semantic_id,
     rank_affixes_for_slot,
+    score_semantic_stat_ids,
 )
 from gd_affix_relevance.scoring.item_scorer import (
     ADDON_AUGMENT,
@@ -37,13 +43,14 @@ from gd_affix_relevance.slots import (
 )
 from gd_affix_relevance.stats.registry import stat_definition
 
-RANKING_PROTOCOL_VERSION = 1
+RANKING_PROTOCOL_VERSION = 2
 RANKING_PROTOCOL_NAME = "grim-gleaner-profile-ranking"
 
 RANKING_KINDS = ("affix", "unique", "component", "augment")
 MAX_LIMIT_PER_SLOT = 20
 DEFAULT_LIMIT_PER_SLOT = 5
 DEFAULT_MINIMUM_GRADE = "B"
+NEXT_GRADE_HINT_LIMIT = 3
 
 ALL_RANKING_SLOT_IDS: tuple[str, ...] = tuple(
     slot_id for _, group in SLOT_GROUPS for slot_id in group
@@ -142,12 +149,148 @@ def _unmatched_stat_ids(
     )
 
 
+# Scoring callback used for counterfactual re-scoring.  Add-ons in
+# resistance-cap mode score through the cap-weight override, so they build
+# their own callback instead of the plain profile scorer.
+ScoreFn = Callable[[tuple[str, ...], BuildProfile], RelevanceScore]
+
+
+def _plain_score_fn(
+    stat_ids: tuple[str, ...], profile: BuildProfile
+) -> RelevanceScore:
+    return score_semantic_stat_ids(stat_ids, profile)
+
+
+def _cap_mode_score_fn(
+    stat_ids: tuple[str, ...], profile: BuildProfile
+) -> RelevanceScore:
+    def addon_weight(stat_id: str) -> int:
+        if stat_id in profile.resistance_cap_weights:
+            return profile.resistance_cap_weights[stat_id] * 2
+        return profile_weight_for_semantic_id(profile, stat_id)
+
+    return score_semantic_stat_ids(stat_ids, profile, weight_for=addon_weight)
+
+
+@dataclass(frozen=True, slots=True)
+class _GradeTarget:
+    grade: str
+    threshold: float
+
+
+def _next_grade_target(effective_score: float) -> _GradeTarget | None:
+    """Return the lowest grade threshold strictly above *effective_score*."""
+
+    for grade, threshold in sorted(
+        GRADE_THRESHOLDS.items(), key=lambda item: item[1]
+    ):
+        if threshold > effective_score:
+            return _GradeTarget(grade=grade, threshold=threshold)
+    return None
+
+
+def _profile_copy(profile: BuildProfile) -> BuildProfile:
+    return BuildProfile(
+        name=profile.name,
+        weights=dict(profile.weights),
+        masteries=profile.masteries,
+        skill_weights=dict(profile.skill_weights),
+        excluded_conversion_sources={
+            destination: set(sources)
+            for destination, sources in profile.excluded_conversion_sources.items()
+        },
+        resistance_cap_enabled=profile.resistance_cap_enabled,
+        resistance_cap_weights=dict(profile.resistance_cap_weights),
+        level_band=profile.level_band,
+    )
+
+
+def _hypothetical_profile(
+    profile: BuildProfile,
+    stat_id: str,
+    weight: int,
+    *,
+    resistance_cap_mode: bool,
+) -> BuildProfile | None:
+    """Clone *profile* as if the user had weighted *stat_id*.
+
+    Skill stats read their weight from the selected-skill table and mastery
+    bonuses cannot be weighted without changing masteries, so those paths are
+    handled (or refused) explicitly.
+    """
+
+    if stat_id.startswith(("skill_bonus:", "skill_modifier:")):
+        hypothetical = _profile_copy(profile)
+        hypothetical.set_skill_weight(stat_id.split(":", 1)[1], weight)
+        return hypothetical
+    if stat_id.startswith("mastery_bonus:"):
+        return None
+    hypothetical = _profile_copy(profile)
+    if resistance_cap_mode:
+        hypothetical.set_resistance_cap_weight(stat_id, weight)
+    else:
+        hypothetical.set_weight(stat_id, weight)
+    return hypothetical
+
+
+def _next_grade_hints(
+    *,
+    semantic_stat_ids: tuple[str, ...],
+    score: RelevanceScore,
+    profile: BuildProfile,
+    labeler: _StatLabeler,
+    score_fn: ScoreFn,
+    resistance_cap_mode: bool = False,
+) -> list[dict[str, Any]]:
+    """Counterfactuals: the cheapest user weights that reach the next grade.
+
+    Only stats the entry already rolls are considered, and each hint reports
+    the minimum weight (1-4) whose simulated re-scoring reaches the next
+    grade threshold under the real deterministic engine.
+    """
+
+    target = _next_grade_target(score.effective_score)
+    if target is None:
+        return []
+    hints: list[dict[str, Any]] = []
+    for stat_id in _unmatched_stat_ids(
+        semantic_stat_ids, score.matched_stat_ids
+    ):
+        for weight in (1, 2, 3, 4):
+            hypothetical = _hypothetical_profile(
+                profile,
+                stat_id,
+                weight,
+                resistance_cap_mode=resistance_cap_mode,
+            )
+            if hypothetical is None:
+                break
+            new_score = score_fn(semantic_stat_ids, hypothetical)
+            if new_score.effective_score >= target.threshold:
+                hints.append(
+                    {
+                        "stat_id": stat_id,
+                        "label": labeler.label(stat_id),
+                        "weight": weight,
+                        "resulting_grade": new_score.grade,
+                        "resulting_score": round(
+                            new_score.effective_score, 4
+                        ),
+                    }
+                )
+                break
+    hints.sort(key=lambda hint: (hint["weight"], hint["stat_id"]))
+    return hints[:NEXT_GRADE_HINT_LIMIT]
+
+
 def _explanation_fields(
     *,
     labeler: _StatLabeler,
     profile: BuildProfile,
     semantic_stat_ids: tuple[str, ...],
     score: Any,
+    score_fn: ScoreFn | None = None,
+    resistance_cap_mode: bool = False,
 ) -> dict[str, Any]:
     return {
         "score": _score_block(score),
@@ -158,6 +301,14 @@ def _explanation_fields(
             labeler,
             _unmatched_stat_ids(semantic_stat_ids, score.matched_stat_ids),
             profile=None,
+        ),
+        "next_grade_hints": _next_grade_hints(
+            semantic_stat_ids=semantic_stat_ids,
+            score=score,
+            profile=profile,
+            labeler=labeler,
+            score_fn=score_fn or _plain_score_fn,
+            resistance_cap_mode=resistance_cap_mode,
         ),
     }
 
@@ -239,6 +390,7 @@ def _addon_entry(
     *,
     labeler: _StatLabeler,
     profile: BuildProfile,
+    resistance_cap_mode: bool = False,
 ) -> dict[str, Any]:
     return {
         "kind": match.addon_type,
@@ -256,6 +408,10 @@ def _addon_entry(
             profile=profile,
             semantic_stat_ids=match.semantic_stat_ids,
             score=match.score,
+            score_fn=(
+                _cap_mode_score_fn if resistance_cap_mode else _plain_score_fn
+            ),
+            resistance_cap_mode=resistance_cap_mode,
         ),
         "stat_lines": list(match.variant.stat_lines),
         "sources": _source_block(match.variant),
@@ -343,6 +499,7 @@ def build_profile_ranking(
         if profile.resistance_cap_enabled
         else None
     )
+    resistance_cap_mode = resistance_cap_weights is not None
 
     slot_results: dict[str, Any] = {}
     for slot_id in slots:
@@ -382,7 +539,12 @@ def build_profile_ranking(
             ]
         if "component" in kinds:
             entry["components"] = [
-                _addon_entry(match, labeler=labeler, profile=profile)
+                _addon_entry(
+                    match,
+                    labeler=labeler,
+                    profile=profile,
+                    resistance_cap_mode=resistance_cap_mode,
+                )
                 for match in rank_addons_for_slot(
                     catalog.items,
                     profile,
@@ -394,7 +556,12 @@ def build_profile_ranking(
             ]
         if "augment" in kinds:
             entry["augments"] = [
-                _addon_entry(match, labeler=labeler, profile=profile)
+                _addon_entry(
+                    match,
+                    labeler=labeler,
+                    profile=profile,
+                    resistance_cap_mode=resistance_cap_mode,
+                )
                 for match in rank_addons_for_slot(
                     catalog.items,
                     profile,
