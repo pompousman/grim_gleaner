@@ -153,9 +153,10 @@ def test_main_window_exposes_gear_grade_subnavigation_and_settings() -> None:
         window.navigation.item(2).font().pointSizeF()
         < window.navigation.item(1).font().pointSizeF()
     )
-    assert window.profile_editor.tabs.count() == 6
+    assert window.profile_editor.tabs.count() == 7
     assert window.profile_editor.tabs.tabText(4) == "Pets"
     assert window.profile_editor.tabs.tabText(5) == "Skills"
+    assert window.profile_editor.tabs.tabText(6) == "Integrations"
     assert window.profile_editor.level_band_combo.currentData() == "90+"
     assert window.sidebar_profile_name.text() == "New Build Profile"
     assert window.sidebar_profile_level.text() == "Profile level: 90+"

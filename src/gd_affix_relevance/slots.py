@@ -118,38 +118,78 @@ def slot_sort_key(slot_id: str) -> tuple[int, str]:
         return len(ordered), slot_id
 
 
-def slot_ids_from_legacy_label(label: str) -> tuple[str, ...]:
-    """Best-effort compatibility for hand-built or older affix variants."""
+ONE_HANDED_WEAPON_SLOTS = (
+    SLOT_WEAPON_1H_MELEE,
+    SLOT_WEAPON_1H_CASTER,
+    SLOT_WEAPON_1H_RANGED,
+)
+TWO_HANDED_WEAPON_SLOTS = (
+    SLOT_WEAPON_2H_MELEE,
+    SLOT_WEAPON_2H_RANGED,
+)
 
-    aliases = {
-        "All armor": ARMOR_SLOTS,
-        "Ring": (SLOT_RING,),
-        "Rings, Amulets": (SLOT_RING, SLOT_AMULET),
-        "Amulet": (SLOT_AMULET,),
-        "Medal": (SLOT_MEDAL,),
-        "Waist": (SLOT_WAIST,),
-        "Head": (SLOT_HEAD,),
-        "Shoulders": (SLOT_SHOULDERS,),
-        "Chest": (SLOT_CHEST,),
-        "Hands": (SLOT_HANDS,),
-        "Legs": (SLOT_LEGS,),
-        "Feet": (SLOT_FEET,),
-        "Shields": (SLOT_SHIELD,),
-        "Off-hands": (SLOT_OFF_HAND,),
-        "One-handed weapons": (
-            SLOT_WEAPON_1H_MELEE,
-            SLOT_WEAPON_1H_CASTER,
-            SLOT_WEAPON_1H_RANGED,
-        ),
-        "Two-handed weapons": (
-            SLOT_WEAPON_2H_MELEE,
-            SLOT_WEAPON_2H_RANGED,
-        ),
-        "All weapons": WEAPON_SLOTS,
-    }
+# Compatibility vocabulary for hand-built catalogs and older gear-slot labels.
+# Keys are matched case-insensitively after splitting compound labels on ``;``.
+# The values deliberately mirror the label spellings that appear in compiled
+# catalog ``gear_slot`` strings (``Shield``, ``1H Melee``, ``Helm``) as well as
+# the older plural forms (``Shields``, ``Off-hands``).
+LEGACY_SLOT_LABEL_ALIASES: dict[str, tuple[str, ...]] = {
+    "all armor": ARMOR_SLOTS,
+    "armor": ARMOR_SLOTS,
+    "head": (SLOT_HEAD,),
+    "helm": (SLOT_HEAD,),
+    "helmet": (SLOT_HEAD,),
+    "shoulders": (SLOT_SHOULDERS,),
+    "shoulder": (SLOT_SHOULDERS,),
+    "chest": (SLOT_CHEST,),
+    "hands": (SLOT_HANDS,),
+    "gloves": (SLOT_HANDS,),
+    "legs": (SLOT_LEGS,),
+    "pants": (SLOT_LEGS,),
+    "feet": (SLOT_FEET,),
+    "boots": (SLOT_FEET,),
+    "waist": (SLOT_WAIST,),
+    "belt": (SLOT_WAIST,),
+    "ring": (SLOT_RING,),
+    "rings": (SLOT_RING,),
+    "amulet": (SLOT_AMULET,),
+    "amulets": (SLOT_AMULET,),
+    "rings, amulets": (SLOT_RING, SLOT_AMULET),
+    "medal": (SLOT_MEDAL,),
+    "medals": (SLOT_MEDAL,),
+    "jewelry": (SLOT_RING, SLOT_AMULET, SLOT_MEDAL),
+    "all weapons": WEAPON_SLOTS,
+    "weapons": WEAPON_SLOTS,
+    "one-handed weapons": ONE_HANDED_WEAPON_SLOTS,
+    "all one-handed weapons": ONE_HANDED_WEAPON_SLOTS,
+    "two-handed weapons": TWO_HANDED_WEAPON_SLOTS,
+    "all two-handed weapons": TWO_HANDED_WEAPON_SLOTS,
+    "1h melee": (SLOT_WEAPON_1H_MELEE,),
+    "2h melee": (SLOT_WEAPON_2H_MELEE,),
+    "1h caster": (SLOT_WEAPON_1H_CASTER,),
+    "caster": (SLOT_WEAPON_1H_CASTER,),
+    "1h ranged": (SLOT_WEAPON_1H_RANGED,),
+    "2h ranged": (SLOT_WEAPON_2H_RANGED,),
+    "shield": (SLOT_SHIELD,),
+    "shields": (SLOT_SHIELD,),
+    "off-hand": (SLOT_OFF_HAND,),
+    "off-hands": (SLOT_OFF_HAND,),
+    "offhand": (SLOT_OFF_HAND,),
+}
+
+
+def slot_ids_from_legacy_label(label: str) -> tuple[str, ...]:
+    """Best-effort compatibility for hand-built or older affix variants.
+
+    Compound labels are split on ``;`` and every part is resolved
+    independently, so ``"1H Melee; 1H Caster; Medal; Chest"`` expands to the
+    union of all four slots instead of only the recognized ones.
+    """
+
     slots: list[str] = []
-    for part in label.split("; "):
-        slots.extend(aliases.get(part, ()))
+    for part in label.split(";"):
+        normalized = part.strip().casefold()
+        slots.extend(LEGACY_SLOT_LABEL_ALIASES.get(normalized, ()))
     return tuple(dict.fromkeys(slots))
 
 

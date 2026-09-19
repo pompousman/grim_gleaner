@@ -46,3 +46,31 @@ jobs:
             --mastery playerclass05 \
             --mastery playerclass08 \
             --output generated-context.json >/dev/null
+          grim-gleaner rank-profile \
+            --catalog-root artifacts/catalog \
+            --profile-file artifacts/profiles/examples/Lightning_Vindicator.json \
+            --kind affix --slot ring --limit-per-slot 2 \
+            --output generated-ranking.json >/dev/null
+          python - <<'EOF'
+          import json
+          payload = json.load(open("generated-ranking.json", encoding="utf-8"))
+          assert payload["protocol"] == "grim-gleaner-profile-ranking"
+          ring = payload["slots"]["ring"]
+          assert ring["prefixes"] and ring["suffixes"]
+          assert ring["prefixes"][0]["matched_stats"]
+          EOF
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            > mcp-input.jsonl
+          grim-gleaner serve-mcp --catalog-root artifacts/catalog < mcp-input.jsonl > mcp-output.jsonl
+          python - <<'EOF'
+          import json
+          responses = [json.loads(line) for line in open("mcp-output.jsonl", encoding="utf-8")]
+          assert len(responses) == 2, "notification must not produce a response"
+          initialize, tools = responses
+          assert initialize["result"]["serverInfo"]["name"] == "grim-gleaner"
+          names = {tool["name"] for tool in tools["result"]["tools"]}
+          assert "rank_profile" in names and "get_profile_context" in names
+          EOF

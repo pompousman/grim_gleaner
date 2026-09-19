@@ -62,3 +62,69 @@ def test_service_searches_catalog_with_bounded_results(
     assert 1 <= len(result["results"]) <= 5
     assert all(entry["kind"] == "skill" for entry in result["results"])
     assert any("Aether Ray" in entry["name"] for entry in result["results"])
+
+
+def test_service_ranks_valid_profiles_with_explanations(
+    service: AutomationService,
+) -> None:
+    profile = BuildProfile(
+        "Lightning",
+        {"flat_lightning_damage": 4, "lightning_damage_percent": 4},
+    )
+    payload = {
+        "profile": _payload(profile),
+        "kinds": ["affix"],
+        "slots": ["ring"],
+        "limit_per_slot": 2,
+    }
+
+    result = service.ranking(payload)
+
+    assert result["protocol"] == "grim-gleaner-profile-ranking"
+    assert result["request"]["slots"] == ["ring"]
+    prefixes = result["slots"]["ring"]["prefixes"]
+    assert prefixes
+    assert all("weight" in stat for stat in prefixes[0]["matched_stats"])
+
+
+def test_service_ranking_rejects_invalid_profiles(
+    service: AutomationService,
+) -> None:
+    payload = {
+        "profile": _payload(
+            BuildProfile("Broken", {"nonexistent_stat": 4})
+        ),
+    }
+
+    with pytest.raises(ValueError, match="failed validation"):
+        service.ranking(payload)
+
+
+def test_service_ranking_rejects_malformed_requests(
+    service: AutomationService,
+) -> None:
+    with pytest.raises(ValueError, match="requires a profile"):
+        service.ranking({"kinds": ["affix"]})
+    with pytest.raises(ValueError, match="must be an object"):
+        service.ranking(None)
+    with pytest.raises(ValueError, match="list of strings"):
+        service.ranking({"profile": _payload(BuildProfile("OK")), "kinds": 5})
+    with pytest.raises(ValueError, match="list of strings"):
+        service.ranking(
+            {"profile": _payload(BuildProfile("OK")), "slots": "ring"}
+        )
+    with pytest.raises(ValueError, match="limit_per_slot"):
+        service.ranking(
+            {"profile": _payload(BuildProfile("OK")), "limit_per_slot": "many"}
+        )
+    with pytest.raises(ValueError, match="between 1 and"):
+        service.ranking(
+            {"profile": _payload(BuildProfile("OK")), "limit_per_slot": 99}
+        )
+
+
+def test_openapi_document_publishes_the_ranking_endpoint() -> None:
+    document = openapi_document()
+
+    assert "/v1/ranking" in document["paths"]
+    assert document["info"]["version"] == "1.1.0"
